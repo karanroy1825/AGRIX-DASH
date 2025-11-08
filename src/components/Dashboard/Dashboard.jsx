@@ -3,7 +3,10 @@ import CardBox from "../Card/CardBox";
 import SalesChart from "../Chart/SalesChart";
 import OrderBarChart from "../Chart/OrdersBarChart";
 import ClusterSalesPieChart from "../Chart/ClusterSalesPieChart";
-import SalesComparisonChart from "../Chart/SalesComparisonChart";
+import SalesComparisonChart from "../Business/SalesComparisonChart";
+import SeasonalSalesChart from "../Season/SeasonalSalesChart";
+import TopProductsChart from "../Order/TopProductsChart";
+import FarmerEngagementTrends from "../Farmer/FarmerEngagementTrends";
 import Navbar from "../Navbar/Navbar.jsx";
 import Sidebar from "../Sidebar/Sidebar.jsx";
 import ClusterTable from "../Cluster/ClusterTable.jsx";
@@ -60,11 +63,43 @@ function Dashboard({ selectedYear, setSelectedYear }) {
     let clusters = new Set();
     let uniqueOrders = new Set();
 
-    data.forEach((order) => {
-      if (order.farmerId) farmers.add(order.farmerId);
-      if (order.clusterId) clusters.add(order.clusterId);
-      if (order.orderID) uniqueOrders.add(order.orderID);
-    });
+    // For 2023-24, handle phone number deduplication
+    if (year === "2023-24" || (year === "Current" && selectedYear === "2023-24")) {
+      const phoneToFarmerId = new Map();
+      
+      // Build phone-to-farmerId mapping
+      data.forEach((order) => {
+        const phone = order.farmerPhoneNumber;
+        const farmerId = order.farmerId;
+        
+        if (phone && farmerId) {
+          phoneToFarmerId.set(phone, farmerId);
+        }
+      });
+      
+      // Count unique farmers
+      data.forEach((order) => {
+        const phone = order.farmerPhoneNumber;
+        const farmerId = order.farmerId;
+        
+        if (farmerId) {
+          farmers.add(farmerId);
+        } else if (phone && !phoneToFarmerId.has(phone)) {
+          // Phone never appears with farmerId
+          farmers.add(phone);
+        }
+        
+        if (order.clusterId) clusters.add(order.clusterId);
+        if (order.orderID) uniqueOrders.add(order.orderID);
+      });
+    } else {
+      // For other years, simple farmerId counting
+      data.forEach((order) => {
+        if (order.farmerId) farmers.add(order.farmerId);
+        if (order.clusterId) clusters.add(order.clusterId);
+        if (order.orderID) uniqueOrders.add(order.orderID);
+      });
+    }
 
     return {
       totalSales: hardcodedSales,
@@ -108,20 +143,69 @@ function Dashboard({ selectedYear, setSelectedYear }) {
 
     let monthlySales = {};
 
-    data.forEach((order) => {
-      if (order.farmerId) farmers.add(order.farmerId);
-      if (order.clusterId) clusters.add(order.clusterId);
-      if (order.orderID) uniqueOrders.add(order.orderID);
+    // For 2023-24, we need to handle phone number deduplication
+    if (selectedYear === "2023-24") {
+      // Build phone-to-farmerId mapping
+      const phoneToFarmerId = new Map();
+      const phonesWithoutFarmerId = new Set();
+      
+      data.forEach((order) => {
+        const phone = order.farmerPhoneNumber;
+        const farmerId = order.farmerId;
+        
+        if (phone && farmerId) {
+          phoneToFarmerId.set(phone, farmerId);
+        } else if (phone && !farmerId) {
+          phonesWithoutFarmerId.add(phone);
+        }
+      });
+      
+      // Now count unique farmers
+      data.forEach((order) => {
+        const phone = order.farmerPhoneNumber;
+        const farmerId = order.farmerId;
+        
+        if (farmerId) {
+          // Has farmerId, add it
+          farmers.add(farmerId);
+        } else if (phone) {
+          // No farmerId, check if this phone is mapped to a farmerId
+          if (!phoneToFarmerId.has(phone)) {
+            // Phone never appears with farmerId, count it as unique
+            farmers.add(phone);
+          }
+          // If phone IS mapped, the farmerId will be counted in the farmerId pass above
+        }
+        
+        if (order.clusterId) clusters.add(order.clusterId);
+        if (order.orderID) uniqueOrders.add(order.orderID);
 
-      // Aggregate monthly sales
-      let date = new Date(order.orderDate);
-      let month = date.toLocaleString("default", {
-        month: "short",
-        year: "2-digit",
-      }); // e.g., "Apr 23"
-      if (!monthlySales[month]) monthlySales[month] = 0;
-      monthlySales[month] += order.grandTotal;
-    });
+        // Aggregate monthly sales
+        let date = new Date(order.orderDate);
+        let month = date.toLocaleString("default", {
+          month: "short",
+          year: "2-digit",
+        }); // e.g., "Apr 23"
+        if (!monthlySales[month]) monthlySales[month] = 0;
+        monthlySales[month] += order.grandTotal;
+      });
+    } else {
+      // For other years, use simple farmerId counting
+      data.forEach((order) => {
+        if (order.farmerId) farmers.add(order.farmerId);
+        if (order.clusterId) clusters.add(order.clusterId);
+        if (order.orderID) uniqueOrders.add(order.orderID);
+
+        // Aggregate monthly sales
+        let date = new Date(order.orderDate);
+        let month = date.toLocaleString("default", {
+          month: "short",
+          year: "2-digit",
+        }); // e.g., "Apr 23"
+        if (!monthlySales[month]) monthlySales[month] = 0;
+        monthlySales[month] += order.grandTotal;
+      });
+    }
 
     // Sort the months chronologically
     const dates = Object.keys(monthlySales).sort((a, b) => {
@@ -264,10 +348,6 @@ function Dashboard({ selectedYear, setSelectedYear }) {
           </div>
         </div>
 
-        {/* Sales Comparison Chart at the very bottom */}
-        <div className="flex justify-center mt-8 mb-8">
-          <SalesComparisonChart />
-        </div>
           </div>
         )}
         
@@ -282,21 +362,28 @@ function Dashboard({ selectedYear, setSelectedYear }) {
         {activeMenuItem === "order" && (
           <div className="flex-1 p-8">
             <h1 className="text-2xl font-bold text-gray-800">Order Management</h1>
-            <p className="text-gray-600 mt-4">Order management content will be displayed here.</p>
+            <TopProductsChart selectedYear={selectedYear} />
           </div>
         )}
         
         {activeMenuItem === "farmer" && (
           <div className="flex-1 p-8">
             <h1 className="text-2xl font-bold text-gray-800">Farmer Management</h1>
-            <p className="text-gray-600 mt-4">Farmer management content will be displayed here.</p>
+            <FarmerEngagementTrends />
           </div>
         )}
         
         {activeMenuItem === "business" && (
           <div className="flex-1 p-8">
             <h1 className="text-2xl font-bold text-gray-800">Business Analytics</h1>
-            <p className="text-gray-600 mt-4">Business analytics content will be displayed here.</p>
+            <SalesComparisonChart />
+          </div>
+        )}
+        
+        {activeMenuItem === "season" && (
+          <div className="flex-1 p-8">
+            <h1 className="text-2xl font-bold text-gray-800 mb-6">Seasonal Analytics</h1>
+            <SeasonalSalesChart />
           </div>
         )}
       </div>
